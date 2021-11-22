@@ -5,7 +5,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.DecoderException;
-import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.PacketBuffer;
 
 import java.util.List;
 
@@ -29,7 +29,7 @@ public class MinecraftCompressDecoder extends ByteToMessageDecoder {
   @Override
   protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
     if (in.readableBytes() != 0) {
-      PacketByteBuf packetBuf = new PacketByteBuf(in);
+      PacketBuffer packetBuf = new PacketBuffer(in);
       int claimedUncompressedSize = packetBuf.readVarInt();
 
       if (claimedUncompressedSize == 0) {

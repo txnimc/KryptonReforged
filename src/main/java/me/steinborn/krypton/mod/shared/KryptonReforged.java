@@ -2,12 +2,17 @@ package me.steinborn.krypton.mod.shared;
 
 import com.velocitypowered.natives.util.Natives;
 import io.netty.util.ResourceLeakDetector;
-import net.fabricmc.api.ModInitializer;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import org.apache.commons.codec.language.bm.Lang;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class KryptonSharedInitializer implements ModInitializer {
-    private static final Logger LOGGER = LogManager.getLogger(KryptonSharedInitializer.class);
+@Mod("kryptonreforged")
+public class KryptonReforged  {
+    private static final Logger LOGGER = LogManager.getLogger();
 
     static {
         // By default, Netty allocates 16MiB arenas for the PooledByteBufAllocator. This is too much
@@ -28,8 +33,14 @@ public class KryptonSharedInitializer implements ModInitializer {
         }
     }
 
-    @Override
-    public void onInitialize() {
+    public KryptonReforged() {
+        FMLJavaModLoadingContext.get().getModEventBus().addListener(this::setup);
+        MinecraftForge.EVENT_BUS.register(this);
+    }
+
+
+    private void setup(final FMLCommonSetupEvent event)
+    {
         LOGGER.info("Compression will use " + Natives.compress.getLoadedVariant() + ", encryption will use " + Natives.cipher.getLoadedVariant());
     }
 }

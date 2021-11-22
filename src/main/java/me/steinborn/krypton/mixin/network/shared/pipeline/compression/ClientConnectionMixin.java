@@ -5,18 +5,18 @@ import com.velocitypowered.natives.util.Natives;
 import io.netty.channel.Channel;
 import me.steinborn.krypton.mod.shared.network.compression.MinecraftCompressDecoder;
 import me.steinborn.krypton.mod.shared.network.compression.MinecraftCompressEncoder;
-import net.minecraft.network.ClientConnection;
+import net.minecraft.network.NetworkManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(ClientConnection.class)
+@Mixin(NetworkManager.class)
 public class ClientConnectionMixin {
     @Shadow private Channel channel;
 
-    @Inject(method = "setCompressionThreshold", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "setupCompression", at = @At("HEAD"), cancellable = true)
     public void setCompressionThreshold(int compressionThreshold, CallbackInfo ci) {
         if (compressionThreshold >= 0) {
             VelocityCompressor compressor = Natives.compress.get().create(4);

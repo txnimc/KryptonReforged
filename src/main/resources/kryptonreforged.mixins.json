@@ -3,6 +3,7 @@
   "minVersion": "0.8",
   "package": "me.steinborn.krypton.mixin",
   "compatibilityLevel": "JAVA_8",
+  "refmap": "kryptonreforged.refmap.json",
   "mixins": [
     "network.shared.flushconsolidation.ClientConnectionMixin",
     "network.shared.flushconsolidation.EntityTrackerMixin",

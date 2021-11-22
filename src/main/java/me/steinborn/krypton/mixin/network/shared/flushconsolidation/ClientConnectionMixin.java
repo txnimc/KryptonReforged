@@ -4,9 +4,9 @@ import io.netty.channel.*;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
 import me.steinborn.krypton.mod.shared.network.ConfigurableAutoFlush;
-import net.minecraft.network.ClientConnection;
-import net.minecraft.network.NetworkState;
-import net.minecraft.network.Packet;
+import net.minecraft.network.IPacket;
+import net.minecraft.network.NetworkManager;
+import net.minecraft.network.ProtocolType;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.Opcodes;
@@ -24,12 +24,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Optimizes ClientConnection by adding the ability to skip auto-flushing and using void promises where possible.
  */
-@Mixin(ClientConnection.class)
+@Mixin(NetworkManager.class)
 public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
     @Shadow private Channel channel;
     private AtomicBoolean autoFlush;
 
-    @Shadow public abstract void setState(NetworkState state);
+    @Shadow public abstract void setProtocol(ProtocolType state);
 
     @Shadow @Final private static Logger LOGGER;
 
@@ -46,14 +46,14 @@ public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
      */
     @Inject(locals = LocalCapture.CAPTURE_FAILHARD,
             cancellable = true,
-            method = "sendImmediately",
-            at = @At(value = "FIELD", target = "Lnet/minecraft/network/ClientConnection;packetsSentCounter:I", opcode = Opcodes.GETFIELD, shift = At.Shift.AFTER))
-    private void sendImmediately$rewrite(Packet<?> packet, @Nullable GenericFutureListener<? extends Future<? super Void>> callback, CallbackInfo info, NetworkState packetState, NetworkState protocolState) {
+            method = "sendPacket",
+            at = @At(value = "FIELD", target = "Lnet/minecraft/network/NetworkManager;sentPackets:I", opcode = Opcodes.GETFIELD, shift = At.Shift.AFTER))
+    private void sendImmediately$rewrite(IPacket<?> packet, @Nullable GenericFutureListener<? extends Future<? super Void>> callback, CallbackInfo info, ProtocolType packetState, ProtocolType protocolState) {
         boolean newState = packetState != protocolState;
 
         if (this.channel.eventLoop().inEventLoop()) {
             if (newState) {
-                this.setState(packetState);
+                this.setProtocol(packetState);
             }
             doSendPacket(packet, callback);
         } else {
@@ -78,7 +78,7 @@ public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
 
                 this.channel.eventLoop().execute(() -> {
                     if (newState) {
-                        this.setState(packetState);
+                        this.setProtocol(packetState);
                     }
                     doSendPacket(packet, callback);
                 });
@@ -88,12 +88,12 @@ public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
         info.cancel();
     }
 
-    @Redirect(method = "tick", at = @At(value = "FIELD", target = "Lnet/minecraft/network/ClientConnection;channel:Lio/netty/channel/Channel;", opcode = Opcodes.GETFIELD))
-    public Channel disableForcedFlushEveryTick(ClientConnection clientConnection) {
+    @Redirect(method = "tick", at = @At(value = "FIELD", target = "Lnet/minecraft/network/NetworkManager;channel:Lio/netty/channel/Channel;", opcode = Opcodes.GETFIELD))
+    public Channel disableForcedFlushEveryTick(NetworkManager clientConnection) {
         return null;
     }
 
-    private void doSendPacket(Packet<?> packet, @Nullable GenericFutureListener<? extends Future<? super Void>> callback) {
+    private void doSendPacket(IPacket<?> packet, @Nullable GenericFutureListener<? extends Future<? super Void>> callback) {
         if (callback == null) {
             this.channel.write(packet, this.channel.voidPromise());
         } else {

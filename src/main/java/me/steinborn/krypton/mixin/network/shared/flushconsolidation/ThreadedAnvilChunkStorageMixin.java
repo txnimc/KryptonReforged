@@ -2,17 +2,17 @@ package me.steinborn.krypton.mixin.network.shared.flushconsolidation;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import me.steinborn.krypton.mod.shared.network.util.AutoFlushUtil;
-import net.minecraft.network.Packet;
-import net.minecraft.server.network.DebugInfoSender;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ChunkHolder;
-import net.minecraft.server.world.PlayerChunkWatchingManager;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.server.world.ThreadedAnvilChunkStorage;
+import net.minecraft.entity.player.ServerPlayerEntity;
+import net.minecraft.network.DebugPacketSender;
+import net.minecraft.network.IPacket;
 import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.util.math.SectionPos;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.PlayerGenerationTracker;
+import net.minecraft.world.server.ChunkHolder;
+import net.minecraft.world.server.ChunkManager;
+import net.minecraft.world.server.ServerWorld;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -26,113 +26,122 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Mixes into various methods in {@code ThreadedAnvilChunkStorage} to utilize flush consolidation for sending chunks
  * all at once to the client. Helpful for heavy server activity or flying very quickly.
  */
-@Mixin(ThreadedAnvilChunkStorage.class)
+@Mixin(ChunkManager.class)
 public abstract class ThreadedAnvilChunkStorageMixin {
-    @Shadow @Final private Int2ObjectMap<ThreadedAnvilChunkStorage.EntityTracker> entityTrackers;
-    @Shadow @Final private PlayerChunkWatchingManager playerChunkWatchingManager;
-    @Shadow @Final private ServerWorld world;
-    @Shadow @Final private ThreadedAnvilChunkStorage.TicketManager ticketManager;
-    @Shadow private int watchDistance;
+    @Shadow @Final private PlayerGenerationTracker playerMap;
+    @Shadow @Final private ServerWorld level;
+    @Shadow @Final private ChunkManager.ProxyTicketManager distanceManager;
+    @Shadow private int viewDistance;
+    @Shadow @Final private Int2ObjectMap<ChunkManager.EntityTracker> entityMap;
 
-    @Shadow protected abstract boolean doesNotGenerateChunks(ServerPlayerEntity player);
+    @Shadow protected abstract boolean skipPlayer(ServerPlayerEntity player);
 
-    @Shadow protected abstract ChunkSectionPos method_20726(ServerPlayerEntity serverPlayerEntity);
+    @Shadow protected abstract SectionPos updatePlayerPos(ServerPlayerEntity serverPlayerEntity);
 
     @Shadow
-    private static int getChebyshevDistance(ChunkPos pos, int x, int z) {
+    private static int checkerboardDistance(ChunkPos pos, int x, int z) {
         throw new AssertionError("pedantic");
     }
 
-    @Shadow public abstract void sendChunkDataPackets(ServerPlayerEntity player, Packet<?>[] packets, WorldChunk chunk);
+    @Shadow
+    protected abstract void playerLoadedChunk(ServerPlayerEntity player, IPacket<?>[] packets, Chunk chunk);
 
-    @Shadow @Nullable protected abstract ChunkHolder getChunkHolder(long pos);
+    @Shadow @Nullable protected abstract ChunkHolder getVisibleChunkIfPresent(long pos);
+
+
+    @Shadow
+    private static int checkerboardDistance(ChunkPos p_219215_0_, ServerPlayerEntity p_219215_1_, boolean p_219215_2_)
+    {
+        return 0;
+    }
 
     /**
      * @author Andrew Steinborn
      * @reason Add support for flush consolidation
      */
     @Overwrite
-    public void updateCameraPosition(ServerPlayerEntity player) {
-        for (ThreadedAnvilChunkStorage.EntityTracker entityTracker : this.entityTrackers.values()) {
+    public void move(ServerPlayerEntity player) {
+        for (ChunkManager.EntityTracker entityTracker : this.entityMap.values()) {
             if (entityTracker.entity == player) {
-                entityTracker.updateCameraPosition(this.world.getPlayers());
+                entityTracker.updatePlayers(this.level.players());
             } else {
-                entityTracker.updateCameraPosition(player);
+                entityTracker.updatePlayer(player);
             }
         }
 
-        ChunkSectionPos oldPos = player.getCameraPosition();
-        ChunkSectionPos newPos = ChunkSectionPos.from(player);
-        boolean isWatchingWorld = this.playerChunkWatchingManager.isWatchDisabled(player);
-        boolean noChunkGen = this.doesNotGenerateChunks(player);
+        SectionPos oldPos = player.getLastSectionPos();
+        SectionPos newPos = SectionPos.of(player);
+
+        boolean isWatchingWorld = this.playerMap.ignored(player);
+        boolean noChunkGen = this.skipPlayer(player);
         boolean movedSections = !oldPos.equals(newPos);
 
         if (movedSections || isWatchingWorld != noChunkGen) {
-            this.method_20726(player);
+            this.updatePlayerPos(player);
 
             if (!isWatchingWorld) {
-                this.ticketManager.handleChunkLeave(oldPos, player);
+                this.distanceManager.removePlayer(oldPos, player);
             }
 
             if (!noChunkGen) {
-                this.ticketManager.handleChunkEnter(newPos, player);
+                this.distanceManager.addPlayer(newPos, player);
             }
 
             if (!isWatchingWorld && noChunkGen) {
-                this.playerChunkWatchingManager.disableWatch(player);
+                this.playerMap.ignorePlayer(player);
             }
 
             if (isWatchingWorld && !noChunkGen) {
-                this.playerChunkWatchingManager.enableWatch(player);
+                this.playerMap.unIgnorePlayer(player);
             }
 
-            long oldChunkPos = ChunkPos.toLong(oldPos.getX(), oldPos.getZ());
-            long newChunkPos = ChunkPos.toLong(newPos.getX(), newPos.getZ());
-            this.playerChunkWatchingManager.movePlayer(oldChunkPos, newChunkPos, player);
+            long oldChunkPos = ChunkPos.asLong(oldPos.getX(), oldPos.getZ());
+            long newChunkPos = ChunkPos.asLong(newPos.getX(), newPos.getZ());
+            this.playerMap.updatePlayer(oldChunkPos, newChunkPos, player);
 
             // If the player is in the same world as this tracker, we should send them chunks.
-            if (this.world == player.world) {
+            if (this.level == player.level) {
                 this.sendChunks(oldPos, player);
             }
         }
     }
 
-    private void sendChunks(ChunkSectionPos oldPos, ServerPlayerEntity player) {
+    private void sendChunks(SectionPos oldPos, ServerPlayerEntity player) {
         AutoFlushUtil.setAutoFlush(player, false);
 
         try {
-            int oldChunkX = oldPos.getSectionX();
-            int oldChunkZ = oldPos.getSectionZ();
+            int oldChunkX = oldPos.x();
+            int oldChunkZ = oldPos.z();
 
             int newChunkX = MathHelper.floor(player.getX()) >> 4;
             int newChunkZ = MathHelper.floor(player.getZ()) >> 4;
 
-            if (Math.abs(oldChunkX - newChunkX) <= this.watchDistance * 2 && Math.abs(oldChunkZ - newChunkZ) <= this.watchDistance * 2) {
-                int minSendChunkX = Math.min(newChunkX, oldChunkX) - this.watchDistance;
-                int maxSendChunkZ = Math.min(newChunkZ, oldChunkZ) - this.watchDistance;
-                int q = Math.max(newChunkX, oldChunkX) + this.watchDistance;
-                int r = Math.max(newChunkZ, oldChunkZ) + this.watchDistance;
+            if (Math.abs(oldChunkX - newChunkX) <= this.viewDistance * 2 && Math.abs(oldChunkZ - newChunkZ) <= this.viewDistance * 2) {
+                int minSendChunkX = Math.min(newChunkX, oldChunkX) - this.viewDistance;
+                int maxSendChunkZ = Math.min(newChunkZ, oldChunkZ) - this.viewDistance;
+                int q = Math.max(newChunkX, oldChunkX) + this.viewDistance;
+                int r = Math.max(newChunkZ, oldChunkZ) + this.viewDistance;
 
                 for (int curX = minSendChunkX; curX <= q; ++curX) {
                     for (int curZ = maxSendChunkZ; curZ <= r; ++curZ) {
                         ChunkPos chunkPos = new ChunkPos(curX, curZ);
-                        boolean inOld = getChebyshevDistance(chunkPos, oldChunkX, oldChunkZ) <= this.watchDistance;
-                        boolean inNew = getChebyshevDistance(chunkPos, newChunkX, newChunkZ) <= this.watchDistance;
-                        this.sendPacketsForChunk(player, chunkPos, new Packet[2], inOld, inNew);
+                        boolean inOld = checkerboardDistance(chunkPos, oldChunkX, oldChunkZ) <= this.viewDistance;
+                        boolean inNew = checkerboardDistance(chunkPos, newChunkX, newChunkZ) <= this.viewDistance;
+                        this.sendPacketsForChunk(player, chunkPos, new IPacket[2], inOld, inNew);
                     }
                 }
             } else {
-                for (int curX = oldChunkX - this.watchDistance; curX <= oldChunkX + this.watchDistance; ++curX) {
-                    for (int curZ = oldChunkZ - this.watchDistance; curZ <= oldChunkZ + this.watchDistance; ++curZ) {
+                for (int curX = oldChunkX - this.viewDistance; curX <= oldChunkX + this.viewDistance; ++curX) {
+                    for (int curZ = oldChunkZ - this.viewDistance; curZ <= oldChunkZ + this.viewDistance; ++curZ) {
                         ChunkPos pos = new ChunkPos(curX, curZ);
-                        this.sendPacketsForChunk(player, pos, new Packet[2], true, false);
+                        this.sendPacketsForChunk(player, pos, new IPacket[2], true, false);
                     }
                 }
 
-                for (int curX = newChunkX - this.watchDistance; curX <= newChunkX + this.watchDistance; ++curX) {
-                    for (int curZ = newChunkZ - this.watchDistance; curZ <= newChunkZ + this.watchDistance; ++curZ) {
+                for (int curX = newChunkX - this.viewDistance; curX <= newChunkX + this.viewDistance; ++curX) {
+                    for (int curZ = newChunkZ - this.viewDistance; curZ <= newChunkZ + this.viewDistance; ++curZ) {
                         ChunkPos pos = new ChunkPos(curX, curZ);
-                        this.sendPacketsForChunk(player, pos, new Packet[2], false, true);
+                        this.sendPacketsForChunk(player, pos, new IPacket[2], false, true);
                     }
                 }
             }
@@ -141,34 +150,34 @@ public abstract class ThreadedAnvilChunkStorageMixin {
         }
     }
 
-    protected void sendPacketsForChunk(ServerPlayerEntity player, ChunkPos pos, Packet<?>[] packets, boolean withinMaxWatchDistance, boolean withinViewDistance) {
+    protected void sendPacketsForChunk(ServerPlayerEntity player, ChunkPos pos, IPacket<?>[] packets, boolean withinMaxWatchDistance, boolean withinViewDistance) {
         if (withinViewDistance && !withinMaxWatchDistance) {
-            ChunkHolder chunkHolder = this.getChunkHolder(pos.toLong());
+            ChunkHolder chunkHolder = this.getVisibleChunkIfPresent(pos.toLong());
             if (chunkHolder != null) {
-                WorldChunk worldChunk = chunkHolder.getWorldChunk();
+                Chunk worldChunk = chunkHolder.getTickingChunk();
                 if (worldChunk != null) {
-                    this.sendChunkDataPackets(player, packets, worldChunk);
+                    this.playerLoadedChunk(player, packets, worldChunk);
                 }
 
-                DebugInfoSender.sendChunkWatchingChange(this.world, pos);
+                DebugPacketSender.sendPoiPacketsForChunk(this.level, pos);
             }
         }
 
         if (!withinViewDistance && withinMaxWatchDistance) {
-            player.sendUnloadChunkPacket(pos);
+            player.untrackChunk(pos);
         }
     }
 
-    @Inject(method = "tickPlayerMovement", at = @At("HEAD"))
+    @Inject(method = "tick()V", at = @At("HEAD"))
     public void disableAutoFlushForEntityTracking(CallbackInfo info) {
-        for (ServerPlayerEntity player : world.getPlayers()) {
+        for (ServerPlayerEntity player : level.players()) {
             AutoFlushUtil.setAutoFlush(player, false);
         }
     }
 
-    @Inject(method = "tickPlayerMovement", at = @At("RETURN"))
+    @Inject(method = "tick()V", at = @At("RETURN"))
     public void enableAutoFlushForEntityTracking(CallbackInfo info) {
-        for (ServerPlayerEntity player : world.getPlayers()) {
+        for (ServerPlayerEntity player : level.players()) {
             AutoFlushUtil.setAutoFlush(player, true);
         }
     }

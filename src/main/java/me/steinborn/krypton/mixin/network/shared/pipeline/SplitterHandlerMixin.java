@@ -4,7 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.DecoderException;
 import me.steinborn.krypton.mod.shared.network.VarintByteDecoder;
-import net.minecraft.network.SplitterHandler;
+import net.minecraft.network.NettyVarint21FrameDecoder;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 
@@ -14,7 +14,7 @@ import java.util.List;
  * Overrides the SplitterHandler to use optimized packet splitting from Velocity 1.1.0. In addition this applies a
  * security fix to stop "nullping" attacks.
  */
-@Mixin(SplitterHandler.class)
+@Mixin(NettyVarint21FrameDecoder.class)
 public class SplitterHandlerMixin {
     private final VarintByteDecoder reader = new VarintByteDecoder();
 

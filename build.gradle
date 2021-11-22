@@ -1,101 +1,203 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+        jcenter()
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+        maven {
+            name 'parchment'
+            url 'https://maven.parchmentmc.org'
+        }
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: "${forgegradle_version}", changing: true
+        classpath group: 'org.spongepowered', name: 'mixingradle', version: "${mixingradle_version}"
+        classpath 'org.parchmentmc:librarian:1.+'
+    }
+}
 plugins {
-    id 'fabric-loom' version '0.5-SNAPSHOT'
-    id 'maven-publish'
-    id "com.github.johnrengelman.shadow" version "6.1.0"
+    id 'com.matthewprenger.cursegradle' version "${cursegradle_version}"
+    id 'com.github.johnrengelman.shadow' version "${shadow_version}"
 }
 
 repositories {
+    maven {
+        url = "https://www.cursemaven.com"
+    }
+    mavenCentral()
     maven {
         url "https://repo.velocitypowered.com/snapshots/"
     }
 }
 
-sourceCompatibility = JavaVersion.VERSION_1_8
-targetCompatibility = JavaVersion.VERSION_1_8
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'org.parchmentmc.librarian.forgegradle'
 
-archivesBaseName = project.archives_base_name
-version = project.mod_version
-group = project.maven_group
+// Only edit below this line, the above code adds and enables the necessary things for Forge to be setup.
+apply plugin: 'eclipse'
+apply plugin: 'maven-publish'
+apply plugin: 'org.spongepowered.mixin'
+
+boolean dev = System.getenv('RELEASE') == null || System.getenv('RELEASE').equals('false');
+
+ext.buildnumber = 0
+project.buildnumber = System.getenv('BUILD_NUMBER') != null ? System.getenv('BUILD_NUMBER') : "custom"
+
+version = "mc${minecraft_version}_v${mod_version}" + (dev && !buildnumber.equals("custom") ? "+${buildnumber}" : '')
+group = 'vice.' + String.valueOf(mod_id)
+archivesBaseName = String.valueOf(mod_id)
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(8)
 
 configurations {
-    shade.transitive = false
-}
-
-dependencies {
-    //to change the versions see the gradle.properties file
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-    implementation "com.velocitypowered:velocity-native:1.1.0-SNAPSHOT"
-    shade("com.velocitypowered:velocity-native:1.1.0-SNAPSHOT") {
-        transitive = false
-    }
-    // PSA: Some older mods, compiled on Loom 0.2.1, might have outdated Maven POMs.
-    // You may need to force-disable transitiveness on them.
-}
-
-shadowJar {
-    configurations = [project.configurations.shade]
-}
-
-
-processResources {
-    inputs.property "version", project.version
-
-    from(sourceSets.main.resources.srcDirs) {
-        include "fabric.mod.json"
-        expand "version": project.version
-    }
-
-    from(sourceSets.main.resources.srcDirs) {
-        exclude "fabric.mod.json"
-    }
-}
-
-// ensure that the encoding is set to UTF-8, no matter what the system default is
-// this fixes some edge cases with special characters not displaying correctly
-// see http://yodaconditions.net/blog/fix-for-java-file-encoding-problems-with-gradle.html
-tasks.withType(JavaCompile) {
-    options.encoding = "UTF-8"
-}
-
-// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-// if it is present.
-// If you remove this task, sources will not be generated.
-task sourcesJar(type: Jar, dependsOn: classes) {
-    classifier = "sources"
-    from sourceSets.main.allSource
-}
-
-jar {
-    from "LICENSE"
-}
-
-// configure the maven publication
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            // add all the jars that should be included when publishing to maven
-            artifact(remapJar) {
-                builtBy remapJar
-            }
-            artifact(sourcesJar) {
-                builtBy remapSourcesJar
-            }
-        }
-    }
-
-    // select the repositories you want to publish to
-    repositories {
-        // uncomment to publish to the local maven
-        // mavenLocal()
-    }
+    shade
 }
 
 minecraft {
-    accessWidener "src/main/resources/krypton.accesswidener"
+    mappings channel: "${mappings_channel}", version: "${mappings_version}"
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            arg '-mixin.config=' + String.valueOf(mod_id) + '.mixins.json'
+            //jvmArgs '-XX:+UnlockCommercialFeatures' // uncomment for profiling
+            property 'forge.logging.console.level', 'info'
+            property 'fml.earlyprogresswindow', 'false'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            mods {
+                kryptonreforged {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        server {
+            workingDirectory project.file('run/server')
+            arg '-mixin.config=' + String.valueOf(mod_id) + '.mixins.json'
+            property 'forge.logging.console.level', 'info'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            mods {
+                kryptonreforged {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        data {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES,REGISTRYDUMP'
+            property 'forge.logging.console.level', 'debug'
+            property 'fml.earlyprogresswindow', 'false'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            args '--mod', String.valueOf(mod_id), '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources')
+            mods {
+                kryptonreforged {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
 }
 
-tasks.remapJar.dependsOn(shadowJar)
-(tasks.remapJar.input as FileSystemLocationProperty<? extends FileSystemLocation>).set(shadowJar.archivePath)
+compileJava {
+    options.compilerArgs = ["-Xdiags:verbose"]
+}
+
+sourceSets.main.resources {
+    srcDir 'src/generated/resources'
+}
+
+mixin {
+    add sourceSets.main, "kryptonreforged.refmap.json"
+}
+
+dependencies {
+    implementation 'org.jetbrains:annotations:20.1.0'
+
+    compileOnly 'org.projectlombok:lombok:1.18.22'
+    annotationProcessor 'org.projectlombok:lombok:1.18.22'
+
+    testCompileOnly 'org.projectlombok:lombok:1.18.22'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.22'
+
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    def velocity = "com.velocitypowered:velocity-native:1.1.0-SNAPSHOT"
+    implementation fg.deobf(velocity)
+    shade velocity
+    //compileOnly fg.deobf("com.velocitypowered:velocity-native:1.1.0-SNAPSHOT")
+
+    runtimeOnly fg.deobf("curse.maven:magnesium-532724:3503910")
+    runtimeOnly fg.deobf("curse.maven:jei-238222:3438494")
+    runtimeOnly fg.deobf("curse.maven:jer-240630:3066754")
+    runtimeOnly fg.deobf("curse.maven:jade-324717:3467445")
+    runtimeOnly fg.deobf("curse.maven:spark-361579:3337641")
+    runtimeOnly fg.deobf("curse.maven:lazydfu-433518:3209972")
+    runtimeOnly fg.deobf("curse.maven:smoothboot-420913:3224252")
+    runtimeOnly fg.deobf("curse.maven:alltheores-405593:3405905")
+    runtimeOnly fg.deobf("curse.maven:cofh-69162:3407019")
+    runtimeOnly fg.deobf("curse.maven:thermalfoundation-222880:3412300")
+    runtimeOnly fg.deobf("curse.maven:thermalexpansion-69163:3404884")
+    runtimeOnly fg.deobf("curse.maven:engineers-313866:3390489")
+    runtimeOnly fg.deobf("curse.maven:immersive-231951:3497359")
+    runtimeOnly fg.deobf("curse.maven:patchouli-306770:3459118")
+
+    annotationProcessor 'org.spongepowered:mixin:0.8.3:processor'
+}
+
+jar {
+    manifest {
+        attributes([
+                "Specification-Title": "${mod_id}",
+                "Specification-Vendor": "vice",
+                "Specification-Version": "1",
+                "Implementation-Title": project.name,
+                "Implementation-Version": "${version}",
+                "Implementation-Vendor" :"vice",
+                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                "MixinConfigs": "${mod_id}.mixins.json"
+        ])
+    }
+}
+
+
+reobf {
+    shadowJar {}
+}
+
+shadowJar {
+    classifier = ''
+    configurations = [project.configurations.shade]
+    exclude 'io.netty.*'
+    exclude 'com.google.*'
+    exclude 'javax.annotation.*'
+    exclude 'org.checkerframework.*'
+    exclude 'org.codehaus.mojo.animal_sniffer.*'
+
+    minimize()
+}
+
+jar.finalizedBy('reobfJar')
+
+artifacts {
+    archives jar, shadowJar
+}
+
+publishing {
+    tasks.publish.dependsOn 'build'
+    publications {
+        mavenJava(MavenPublication) {
+            artifact shadowJar
+        }
+    }
+
+    repositories {
+        if (project.hasProperty('mavendir')) {
+            maven { url mavendir }
+        }
+    }
+}
