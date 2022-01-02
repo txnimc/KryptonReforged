@@ -4,6 +4,7 @@
   "package": "me.steinborn.krypton.mixin",
   "compatibilityLevel": "JAVA_16",
   "plugin": "me.steinborn.krypton.mod.shared.KryptonMixinPlugin",
+  "refmap": "krypton-refmap.json",
   "client": [
     "client.fastchunkentityaccess.ClientWorldMixin"
   ],

@@ -1,8 +1,6 @@
 package me.steinborn.krypton.mixin.server.fastchunkentityaccess;
 
 import me.steinborn.krypton.mod.shared.WorldEntityByChunkAccess;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
 import net.minecraft.entity.Entity;
 import net.minecraft.server.world.ServerEntityManager;
 import net.minecraft.server.world.ServerWorld;

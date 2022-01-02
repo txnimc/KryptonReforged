@@ -17,23 +17,8 @@ import java.lang.reflect.InvocationTargetException;
 
 @Mixin(ClientConnection.class)
 public class ClientConnectionMixin {
-    private static Constructor<?> krypton_viaEventConstructor;
-
-    static {
-        krypton_findViaEvent();
-    }
-
     @Shadow
     private Channel channel;
-
-    private static void krypton_findViaEvent() {
-        // ViaFabric compatibility
-        try {
-            krypton_viaEventConstructor =
-                    Class.forName("com.viaversion.fabric.common.handler.PipelineReorderEvent").getConstructor();
-        } catch (ClassNotFoundException | NoSuchMethodException ignored) {
-        }
-    }
 
     @Inject(method = "setCompressionThreshold", at = @At("HEAD"), cancellable = true)
     public void setCompressionThreshold(int compressionThreshold, boolean validate, CallbackInfo ci) {
@@ -59,17 +44,6 @@ public class ClientConnectionMixin {
             }
         }
 
-        this.handleViaCompression();
-
         ci.cancel();
-    }
-
-    private void handleViaCompression() {
-        if (krypton_viaEventConstructor == null) return;
-        try {
-            this.channel.pipeline().fireUserEventTriggered(krypton_viaEventConstructor.newInstance());
-        } catch (InvocationTargetException | InstantiationException | IllegalAccessException e) {
-            e.printStackTrace();
-        }
     }
 }

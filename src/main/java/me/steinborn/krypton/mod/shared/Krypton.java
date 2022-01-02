@@ -2,14 +2,20 @@ package me.steinborn.krypton.mod.shared;
 
 import com.velocitypowered.natives.util.Natives;
 import io.netty.util.ResourceLeakDetector;
-import net.fabricmc.api.ModInitializer;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class KryptonSharedInitializer implements ModInitializer {
-    private static final Logger LOGGER = LogManager.getLogger(KryptonSharedInitializer.class);
 
-    static {
+@Mod("krypton")
+public class Krypton {
+    private static final Logger LOGGER = LogManager.getLogger(Krypton.class);
+
+    public Krypton() {
         // By default, Netty allocates 16MiB arenas for the PooledByteBufAllocator. This is too much
         // memory for Minecraft, which imposes a maximum packet size of 2MiB! We'll use 4MiB as a more
         // sane default.
@@ -26,10 +32,19 @@ public class KryptonSharedInitializer implements ModInitializer {
         if (System.getProperty("io.netty.leakDetection.level") == null) {
             ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.DISABLED);
         }
+
+        IEventBus MOD_BUS = FMLJavaModLoadingContext.get().getModEventBus();
+
+        // This listener is fired on both client and server during setup.
+        MOD_BUS.addListener(this::commonSetup);
+        // This listener is only fired during client setup, so we can use client-side methods here.
+        MOD_BUS.addListener(this::clientSetup);
     }
 
-    @Override
-    public void onInitialize() {
+    private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("Compression will use " + Natives.compress.getLoadedVariant() + ", encryption will use " + Natives.cipher.getLoadedVariant());
+    }
+
+    private void clientSetup(final FMLClientSetupEvent event) {
     }
 }
