@@ -3,6 +3,11 @@ plugins {
     id "maven-publish"
     id 'com.github.johnrengelman.shadow' version "7.0.0+"
 
+repositories {
+    maven {
+        url "https://repo.velocitypowered.com/snapshots/"
+    }
+    maven { name 'Jitpack'; url 'https://jitpack.io' }
 }
 
 sourceCompatibility = targetCompatibility = JavaVersion.VERSION_17
@@ -56,11 +61,12 @@ repositories {
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    forge "net.minecraftforge:forge:${project.forge_version}"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation include("com.velocitypowered:velocity-native:3.1.2-SNAPSHOT")
 
-    def velocity = "com.velocitypowered:velocity-native:1.1.0-SNAPSHOT"
-    modImplementation velocity
-    bundle velocity
+    // Include LazyDFU so starting the server and client at the same time doesn't turn my computer into a fighter jet
+    modRuntime "com.github.astei:lazydfu:${project.lazydfu_version}"
+}
 
 }
 
