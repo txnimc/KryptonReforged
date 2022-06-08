@@ -1,7 +1,8 @@
 plugins {
-    id "dev.architectury.loom" version "0.10.0-SNAPSHOT"
+    id "dev.architectury.loom" version "0.11.0-SNAPSHOT"
     id "maven-publish"
     id 'com.github.johnrengelman.shadow' version "7.0.0+"
+}
 
 repositories {
     maven {
@@ -22,6 +23,8 @@ configurations {
         canBeResolved = true
         canBeConsumed = false
     }
+
+    shade.transitive = false
 
     // Only if you want your shadowed/bundled dependencies on the classpath:
     implementation.extendsFrom bundle
@@ -61,14 +64,17 @@ repositories {
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation include("com.velocitypowered:velocity-native:3.1.2-SNAPSHOT")
+    forge "net.minecraftforge:forge:${project.forge_version}"
+
+    def velocity = "com.velocitypowered:velocity-native:3.1.0"
+    modImplementation velocity
+    bundle velocity
 
     // Include LazyDFU so starting the server and client at the same time doesn't turn my computer into a fighter jet
-    modRuntime "com.github.astei:lazydfu:${project.lazydfu_version}"
+    //modRuntime "com.github.astei:lazydfu:${project.lazydfu_version}"
 }
 
-}
+
 
 processResources {
     inputs.property "version", project.version
@@ -101,6 +107,8 @@ shadowJar {
     exclude "netty-resolver-4.1.52.Final.jar"
     exclude "netty-buffer-4.1.52.Final.jar"
     exclude "netty-common-4.1.52.Final.jar"
+    exclude "netty-all-4.1.68.Final.jar"
+    exclude "netty*"
 
     minimize()
 }
