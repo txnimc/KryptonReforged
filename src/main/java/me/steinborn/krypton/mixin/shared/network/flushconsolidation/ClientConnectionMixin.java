@@ -7,6 +7,7 @@ import me.steinborn.krypton.mod.shared.network.ConfigurableAutoFlush;
 import net.minecraft.network.ClientConnection;
 import net.minecraft.network.NetworkState;
 import net.minecraft.network.Packet;
+import net.minecraft.network.PacketCallbacks;
 import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
@@ -44,7 +45,7 @@ public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
             cancellable = true,
             method = "sendImmediately",
             at = @At(value = "FIELD", target = "Lnet/minecraft/network/ClientConnection;packetsSentCounter:I", opcode = Opcodes.PUTFIELD, shift = At.Shift.AFTER))
-    private void sendImmediately$rewrite(Packet<?> packet, @Nullable GenericFutureListener<? extends Future<? super Void>> callback, CallbackInfo info, NetworkState packetState, NetworkState protocolState) {
+    private void sendImmediately$rewrite(Packet<?> packet, @Nullable PacketCallbacks callback, CallbackInfo info, NetworkState packetState, NetworkState protocolState) {
         boolean newState = packetState != protocolState;
 
         if (this.channel.eventLoop().inEventLoop()) {
@@ -88,12 +89,22 @@ public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
         return null;
     }
 
-    private void doSendPacket(Packet<?> packet, @Nullable GenericFutureListener<? extends Future<? super Void>> callback) {
+    private void doSendPacket(Packet<?> packet, @Nullable PacketCallbacks callback) {
         if (callback == null) {
             this.channel.write(packet, this.channel.voidPromise());
         } else {
             ChannelFuture channelFuture = this.channel.write(packet);
-            channelFuture.addListener(callback);
+            channelFuture.addListener(listener -> {
+                if (listener.isSuccess()) {
+                    callback.onSuccess(); // onSuccess moj
+                } else {
+                    Packet<?> failedPacket = callback.getFailurePacket(); // onFailure moj
+                    if (failedPacket != null) {
+                        ChannelFuture failedChannelFuture = this.channel.writeAndFlush(failedPacket);
+                        failedChannelFuture.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+                    }
+                }
+            });
             channelFuture.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         }
 
