@@ -4,8 +4,8 @@ import io.netty.channel.*;
 import me.steinborn.krypton.mod.shared.network.ConfigurableAutoFlush;
 import net.minecraft.network.ClientConnection;
 import net.minecraft.network.NetworkState;
-import net.minecraft.network.Packet;
 import net.minecraft.network.PacketCallbacks;
+import net.minecraft.network.packet.Packet;
 import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
@@ -44,7 +44,6 @@ public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
             method = "sendImmediately",
             at = @At(value = "FIELD", target = "Lnet/minecraft/network/ClientConnection;packetsSentCounter:I", opcode = Opcodes.PUTFIELD, shift = At.Shift.AFTER))
     private void sendImmediately$rewrite(Packet<?> packet, @Nullable PacketCallbacks callback, CallbackInfo info, NetworkState packetState, NetworkState protocolState) {
-        // class_7648 is net/minecraft/network/PacketSendListener in Mojmap
         boolean newState = packetState != protocolState;
 
         if (this.channel.eventLoop().inEventLoop()) {
@@ -95,9 +94,9 @@ public abstract class ClientConnectionMixin implements ConfigurableAutoFlush {
             ChannelFuture channelFuture = this.channel.write(packet);
             channelFuture.addListener(listener -> {
               if (listener.isSuccess()) {
-                callback.onSuccess(); // onSuccess moj
+                callback.onSuccess();
               } else {
-                Packet<?> failedPacket = callback.getFailurePacket(); // onFailure moj
+                Packet<?> failedPacket = callback.getFailurePacket();
                 if (failedPacket != null) {
                   ChannelFuture failedChannelFuture = this.channel.writeAndFlush(failedPacket);
                   failedChannelFuture.addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
